@@ -1,0 +1,4 @@
+jupyter
+scikit-learn
+matplotlib
+torch

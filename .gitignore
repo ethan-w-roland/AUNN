@@ -1,0 +1,4 @@
+venv
+nerf
+.env
+__pycache__
