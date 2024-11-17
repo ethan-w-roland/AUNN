@@ -5,11 +5,11 @@ https://gwern.net/aunn
 
 ## Background
 
-The basic idea is you assign every token in a dataset a sequential index and train a model to predict a token using nothing but the index as input. This is very similar in concept to NeRFs, where the network is acting as a compressed representation of the dataset. The hope with AUNNs is that you could then inference the network on unseen indices (i.e if the dataset is N tokens long, see what the prediction is for N+1) and that "next-index" prediction would continue the sequence in a coherent way. You could imagine doing language modeling by having one really long string of all the text on the internet, and asking the model what values are associated with the indices after the dataset ends. 
+First assign every token in a dataset a sequential index. Then, train a model to predict those tokens using nothing but the index. This is similar in concept to NeRFs, where the network is explicitly acting as a compressed representation of the dataset. The hope with AUNNs is that you could inference the network on unseen indices (i.e if the dataset is N tokens long, see what the prediction is for N+1) and that model would generalize well enought that the "next-index" prediction continues the sequence in a coherent way. You could imagine doing language modeling by having one really long string of all the text on the internet, and asking the model what values are associated with the indices after the dataset ends.
 
-In the proposal there's also the idea of "prompting" the model via conditioning-by-backpropogation. Essentially, you train the model via backprop that the "true" values for indices N+1, N+2, etc (or however long your prompt is) equates to the text of your prompt. Then you'd see a logically coherent extrapolation of your prompt for the prediction of the post-prompt indices. This gets you behavior very similar to the "in-context-learning" you see in transformer or RNN models (or at least that's the hope).
+In the proposal there's also the idea of "prompting" the model via conditioning-by-backpropogation. Essentially, you train the model via backprop that the "true" values for indices N+1, N+2, ..., N+P (where P is the length of your prompt) equates to the text of your prompt. You'd then see a logically coherent continuation of your prompt as the prediction for the post-prompt indices. This gets you behavior very similar to the "in-context-learning" you see in transformer or RNN models (or at least that's the hope).
 
-I'll direct readers to the original article for more details. Overall the model architecture is both extremely simple while also being extremely different from normal approaches to sequence modeling. Having any evidence of it working at all would be very interesting.
+I suggest Gwern's original article for more details. Overall the architecture is very simple and also very different from normal sequence-continuation models. Any evidence of it working at all would be neat.
 
 ## Results
 
@@ -51,4 +51,4 @@ Implementation-wise I'm just using a bog-standard MLP, with the Swish activation
 
 ![implementation](images/implementation.png)
 
-Time permitting, I'll likely do a few follow-ups to this toy example. I've had one suggestion to try language modeling with the Tiny-Shakespeare dataset, which seems like a interesting next step.
+Time permitting, I'll likely do a few follow-ups to this toy example. I recieved one suggestion to try language modeling with the Tiny-Shakespeare dataset, which seems like a interesting next step.
