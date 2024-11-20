@@ -13,7 +13,7 @@ I suggest Gwern's original article for more details. Overall the architecture is
 
 ## Results
 
-Intrigued by Gwern's proposal, I spend a few hours this week creating a simple implementation. The results are interesting. With a toy dataset, I see evidence both of generalization to unseen indices and of the ability to use backprop to "condition" on input for sequence-prediction tasks. The dataset has the following format:
+Intrigued by Gwern's proposal, I spent a few hours this week creating a simple implementation. The results are interesting. With a toy dataset, I see evidence both of generalization to unseen indices and of the ability to use backprop to "condition" on input for sequence-prediction tasks. The dataset has the following format:
 
 `|bbb|aaa|aaa|aaa|aaa|ccc|ccc|bbb|aaa|bbb|ccc|bbb|bbb|bbb|aaa|bbb|ccc|....`
 
