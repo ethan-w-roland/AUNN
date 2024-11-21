@@ -5,7 +5,7 @@ https://gwern.net/aunn
 
 ## Background
 
-First assign every token in a dataset a sequential index. Then, train a model to predict those tokens using nothing but the index. This is similar in concept to NeRFs, where the network is explicitly acting as a compressed representation of the dataset. The hope with AUNNs is that you could inference the network on unseen indices (i.e if the dataset is N tokens long, see what the prediction is for N+1) and that model would generalize well enought that the "next-index" prediction continues the sequence in a coherent way. You could imagine doing language modeling by having one really long string of all the text on the internet, and asking the model what values are associated with the indices after the dataset ends.
+First assign every token in a dataset a sequential index. Then, train a model to predict those tokens using nothing but the index. This is similar in concept to NeRFs, where the network is explicitly acting as a compressed representation of the dataset. The hope with AUNNs is that you could inference the network on unseen indices (i.e if the dataset is N tokens long, see what the prediction is for N+1) and that model would generalize well enought that the "next-index" prediction continues the sequence in a coherent way. You could imagine doing language modeling by training on one really long string of text (from The Pile, Wikipedia, etc), and asking the model what values are associated with the indices after the dataset ends.
 
 In the proposal there's also the idea of "prompting" the model via conditioning-by-backpropogation. Essentially, you train the model via backprop that the "true" values for indices N+1, N+2, ..., N+P (where P is the length of your prompt) equates to the text of your prompt. You'd then see a logically coherent continuation of your prompt as the prediction for the post-prompt indices. This gets you behavior very similar to the "in-context-learning" you see in transformer or RNN models (or at least that's the hope).
 
@@ -13,7 +13,7 @@ I suggest Gwern's original article for more details. Overall the architecture is
 
 ## Results
 
-Intrigued by Gwern's proposal, I spend a few hours this week creating a simple implementation. The results are interesting. With a toy dataset, I see evidence both of generalization to unseen indices and of the ability to use backprop to "condition" on input for sequence-prediction tasks. The dataset has the following format:
+Intrigued by Gwern's proposal, I spent a few hours this week creating a simple implementation. The results are interesting. With a toy dataset, I see evidence both of generalization to unseen indices and of the ability to use backprop to "condition" on input for sequence-prediction tasks. The dataset has the following format:
 
 `|bbb|aaa|aaa|aaa|aaa|ccc|ccc|bbb|aaa|bbb|ccc|bbb|bbb|bbb|aaa|bbb|ccc|....`
 
