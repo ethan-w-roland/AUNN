@@ -13,7 +13,7 @@ I suggest Gwern's original article for more details. The architecture is very si
 
 ## Results
 
-Intrigued by Gwern's proposal, I spent a few hours this week creating a simple implementation. The results were interesting enough to post. With a toy dataset, there's evidence both of generalization to unseen indices and of the ability to use backprop to "condition" on input for sequence-prediction tasks. The dataset has the following format:
+Intrigued by Gwern's proposal, I spent a few hours this week creating a simple implementation. With a toy dataset, there's some evidence both of generalization to unseen indices and of the ability to use backprop to "condition" on input for sequence-prediction tasks. The dataset has the following format:
 
 `|bbb|aaa|aaa|aaa|aaa|ccc|ccc|bbb|aaa|bbb|ccc|bbb|bbb|bbb|aaa|bbb|ccc|....`
 
@@ -51,4 +51,6 @@ Implementation-wise I'm just using a bog-standard MLP, with the Swish activation
 
 ![implementation](images/implementation.png)
 
-The current version of this in the notebook includes some optimizations & misc changes I made after typing this original writeup. Time permitting, I'll try to do a few follow-ups. Simplest next step would be MNIST, and given that works I'll probably look into language modeling via TinyShakespeare.
+The current version of this in the notebook includes some optimizations & misc changes I made after typing this original writeup. 
+
+Of course, the biggest question is does this still work with non-trivial datasets? I'm planning a few follow-ups to see if it does. The simplest next step would be MNIST classification, and given that works I'll probably look into language modeling via TinyShakespeare.
