@@ -3,3 +3,4 @@ scikit-learn
 matplotlib
 torch
 tqdm
+numpy
