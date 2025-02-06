@@ -1,4 +1,5 @@
 venv
 nerf
 .env
+*.data
 __pycache__
