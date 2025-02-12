@@ -1,5 +1,5 @@
 venv
 nerf
 .env
-*.data
+tiny_stories/data
 __pycache__
