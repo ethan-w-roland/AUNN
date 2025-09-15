@@ -59,7 +59,7 @@ def run(
     lm_opt = optim.AdamW(lm_params, lr=lr)
 
     mem_params = list(model.mem.get_params(embeds=True))
-    mem_opt = optim.AdamW(mem_params, lr=lr)
+    mem_opt = optim.AdamW(mem_params, lr=lr*2)
 
     proj_params = list(model.proj.parameters())
     proj_opt = optim.AdamW(proj_params, lr=lr)
@@ -70,7 +70,7 @@ def run(
     if resume:
         try:
             candidates = sorted(
-                checkpoint_dir.glob("aunn_*.pt"),
+                checkpoint_dir.glob("aunn_*.bin"),
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
@@ -134,7 +134,7 @@ def run(
         for _ in range(epochs):
 
             loader.reset(0)
-            pbar = tqdm(range(num_batches-40, num_batches), ncols=150)
+            pbar = tqdm(range(num_batches-10, num_batches), ncols=150)
 
             for batch_num in pbar:
 
@@ -195,7 +195,7 @@ def run(
 
     # --- (3.5) Checkpoint Model ---
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    checkpoint_path = checkpoint_dir / f"aunn_{timestamp}.pt"
+    checkpoint_path = checkpoint_dir / f"aunn_{timestamp}.bin"
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
