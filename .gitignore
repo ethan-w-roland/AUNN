@@ -1,5 +1,4 @@
-venv
-nerf
+.venv
 .env
-tiny_stories/data
 __pycache__
+*.bin
