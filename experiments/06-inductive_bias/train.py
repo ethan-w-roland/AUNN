@@ -162,7 +162,7 @@ def run(
 
                     pbar.set_description(f"loss={loss.item():.3f}")
 
-                    if loss.item() < 0.1:
+                    if loss.item() < 0.2:
                         print(f"\nN={N}")
                         break
 
@@ -191,9 +191,7 @@ def run(
                 pbar.set_description(f"loss={loss.item():.3f}")       
 
 
-    # INSERT_YOUR_CODE
-
-    # --- (3.5) Checkpoint Model ---
+    # --- (4) Checkpoint Model ---
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     checkpoint_path = checkpoint_dir / f"aunn_{timestamp}.bin"
 
@@ -208,7 +206,7 @@ def run(
     print(f"Model checkpoint saved to {checkpoint_path}")
 
 
-    #--- (4) Inference AUNN ---
+    #--- (5) Inference AUNN ---
     # a. Given a token prompt, condition memory module on the prompt (10-100ish steps)
     # b. input positions of token prompt to aunn.forward(), position -> embeds -> logits
     # c. get logits for next token
