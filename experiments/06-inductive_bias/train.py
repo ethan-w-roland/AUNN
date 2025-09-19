@@ -191,19 +191,19 @@ def run(
                 pbar.set_description(f"loss={loss.item():.3f}")       
 
 
-    # --- (4) Checkpoint Model ---
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    checkpoint_path = checkpoint_dir / f"aunn_{timestamp}.bin"
+        # --- Checkpoint Model ---
+        print("Checkpoint Model...")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        checkpoint_path = checkpoint_dir / f"aunn_{timestamp}.bin"
 
-    checkpoint = {
-        "model_state_dict": model.state_dict(),
-        "mem_opt_state_dict": mem_opt.state_dict(),
-        "lm_opt_state_dict": lm_opt.state_dict(),
-        "proj_opt_state_dict": proj_opt.state_dict(),
-        "epochs": epochs,
-    }
-    torch.save(checkpoint, checkpoint_path)
-    print(f"Model checkpoint saved to {checkpoint_path}")
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "mem_opt_state_dict": mem_opt.state_dict(),
+            "lm_opt_state_dict": lm_opt.state_dict(),
+            "proj_opt_state_dict": proj_opt.state_dict(),
+        }
+        torch.save(checkpoint, checkpoint_path)
+        print(f"Model checkpoint saved to {checkpoint_path}")
 
 
     #--- (5) Inference AUNN ---
@@ -218,6 +218,8 @@ def run(
     # the thing we'd really like to prove is "local continual learning" i.e. creating conherent responses to the prompt
     # where the completion clearly indicates a response conditioned on information not currently in context 
     # the hope is to solve long context coherence by treating LLM weights as a kind of additional hidden state
+
+    print("Starting experimental phase...")
 
 # --- CLI ---
 if __name__ == "__main__":

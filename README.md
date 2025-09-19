@@ -19,23 +19,23 @@ Intrigued by Gwern's proposal, I spent a few hours this week creating a simple i
 
 Every three-letter chunk is chosen randomly. In total I train on 100k randomly chosen sequences (aka 400k characters) for 500 epochs:
 
-![loss graph](writeup/loss.png)
+![loss graph](experiments/01-sequence/writeup/loss.png)
 
 Once training is complete we reach 100% accuracy on the training set i.e. we've completely memorized the training set. Then we can query the model to get the predictions for N+1, N+2, ... , where N is the length of the dataset (400k chars) less one (for zero indexing). Doing this we get the following:
 
-![output_N_N100](writeup/N-N100.png)
+![output_N_N100](experiments/01-sequence/writeup/N-N100.png)
 
 Although the model has never trained on indices > N, the model still generalizes to these unseen indices, in the sense that it preserves the local structure expected of the pattern ("|" every 4 chars, letters always come in sets of 3). It also generalizes to very to large input indices (greater than 10 million):
 
-![output_N10million](writeup/N10million.png)
+![output_N10million](experiments/01-sequence/writeup/N10million.png)
 
 The value of a particular sequence in the training set is random, but the model still (very roughly) learns an even distribution of characters. I've made a histogram of all character predictions from N to N + 100k to illustrate the point:
 
-![histogram](writeup/histogram.png)
+![histogram](experiments/01-sequence/writeup/histogram.png)
 
 I also try to demonstrate conditioning model outputs via a single step of backprop:
 
-![conditioning](writeup/conditioning.png)
+![conditioning](experiments/01-sequence/writeup/conditioning.png)
 
 Here the original predictions for N+1 to N + 4 are `|aaa`.
 
@@ -49,8 +49,8 @@ I found this little experiment interesting. Given more compute, maybe it could w
 
 Implementation-wise I'm just using a bog-standard MLP, with the Swish activation function, RMSNorm, and skip connections every 2 layers. The MLP has a hidden dimension of 64 and uses 8 layers. Much credit goes to GPT-o1 for helping me prototype. For the position embedding I'm using binary inputs (each dimension is a different digit of a 64 bit binary number). I also tried more standard fourier embeddings (as you might seen in LLM's) but surprisingly those seemed less performant, at least in the few tests I did. Though I doubt that holds true when modeling more complicated distributions.
 
-![implementation](writeup/implementation.png)
+![implementation](experiments/01-sequence/writeup/implementation.png)
 
-The current version of this in the notebook includes some optimizations & misc changes I made after typing this original writeup. 
+The current version of this in the notebook includes some optimizations & misc changes I made after typing this original experiments/01-sequence/writeup. 
 
 Of course, the biggest question is does this still work with non-trivial datasets? I'm planning a few follow-ups to see if it does. The simplest next step would be MNIST classification, and given that works I'll probably look into language modeling via TinyShakespeare.
