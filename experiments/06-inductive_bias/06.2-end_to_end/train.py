@@ -56,12 +56,12 @@ def run(
     # --- Optimizers ---
 
     lm_params = []
-    for param_type in ["lm","norm","out_emb","inp_emb"]:
+    for param_type in ["lm","norm","inp_emb","cur_emb","nxt_emb"]:
         lm_params.extend(list(getattr(model, param_type).parameters()))
     lm_opt = optim.AdamW(lm_params, lr=lr)
 
     mem_params = list(model.mem.parameters())
-    mem_opt = optim.AdamW(mem_params, lr=lr*2)
+    mem_opt = optim.AdamW(mem_params, lr=lr)
 
     # --- Resume from checkpoint if requested ---
     checkpoint_dir = root_dir / "checkpoints"
@@ -99,24 +99,32 @@ def run(
             for _ in pbar:
 
                 data = loader.next_batch()
-                x, y = data[:, :-1], data[:, 1:]
+                x_data, y_data = data[:, :-1], data[:, 1:]
 
-                x = model.inp_emb(x)
+                x = model.inp_emb(x_data)
                 x = model.lm(x)
                 x = model.norm(x)
-                x = model.out_emb(x)
+                cur_logits = model.cur_emb(x)
+                nxt_logits = model.nxt_emb(x)
 
-                loss = F.cross_entropy(
-                    x.view(-1, x.size(-1)),
-                    y.reshape(-1),
+                cur_loss = F.cross_entropy(
+                    cur_logits.view(-1, cur_logits.size(-1)),
+                    x_data.reshape(-1),
                 )
+
+                nxt_loss = F.cross_entropy(
+                    nxt_logits.view(-1, nxt_logits.size(-1)),
+                    y_data.reshape(-1),
+                )
+
+                loss = cur_loss + nxt_loss
 
                 loss.backward()
                 nn.utils.clip_grad_norm_(lm_params, 1.0)
                 lm_opt.step()
                 lm_opt.zero_grad(set_to_none=True)
 
-                pbar.set_description(f"loss={loss.item():.3f}")
+                pbar.set_description(f"cur_loss={cur_loss.item():.3f}, nxt_loss={nxt_loss.item():.3f}")
 
 
         # --- Checkpoint Model ---
@@ -132,56 +140,44 @@ def run(
         torch.save(checkpoint, checkpoint_path)
         print(f"Model checkpoint saved to {checkpoint_path}")
 
-
-    #--- (3) Inference AUNN ---
-    # a. Given a token prompt, condition memory module on the prompt (10-100ish steps)
-    # b. input positions of token prompt to aunn.forward(), position -> embeds -> logits
-    # c. get logits for next token
-    # d. train memory module on the next token
-    # e. construct new prompt with next token
-    # f. repeat b-e until desired generation length is reached
-
-    # now, once we prove the above works, the question becomes can we continue pretraining the LM using only position embeds?
-    # the thing we'd really like to prove is "local continual learning" i.e. creating conherent responses to the prompt
-    # where the completion clearly indicates a response conditioned on information not currently in context 
-    # the hope is to solve long context coherence by treating LLM weights as a kind of additional hidden state
-
     print("Starting experimental phase...")
     loader.reset(0)
 
-    #autoregressively inference just the LM
+   
     data = loader.next_batch()
-    data = data[0,:20] #first batch, first 20 tokens
-    print(tokenizer.decode(data))
-    prompt = data[:10] #first 10 tokens
+    data = data[0,:] #first example
+    prompt = data[:200] #first 200 tokens
+    print(tokenizer.decode(prompt))
     prompt = prompt.unsqueeze(0) #(1, T)
+    print('----')
+
+    #autoregressively inference just the LM
+    inp_tok = prompt
     with torch.inference_mode():
         for i in range(10):
             #get prediction
-            x = model.inp_emb(prompt)
+            x = model.inp_emb(inp_tok)
             x = model.lm(x)
             x = model.norm(x)
-            x = model.out_emb(x)
+            x = model.nxt_emb(x)
             next_logit = x[:, -1, :]
             next_token = next_logit.argmax(dim=-1).unsqueeze(0)
-            prompt = torch.cat([prompt, next_token], dim=-1)
-            print(tokenizer.decode(prompt.squeeze(0)))
+            inp_tok = torch.cat([inp_tok, next_token], dim=-1)
+            print(tokenizer.decode(inp_tok[:,-20:].squeeze(0)))
 
     print('-'*30)
 
     #autoregressive inference via memory training
 
     #(a) train first 10 tokens into memory
-    prompt = data[:10] #first 10 tokens
-    prompt = prompt.unsqueeze(0) #(1, T)
     lm_emb = model.inp_emb(prompt).clone().detach()
     loss = float('inf')
     beg_pos = 0
-    end_pos = 10
+    end_pos = len(prompt.squeeze(0))
     positions = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
     print(positions)
     pos_emb = model.encode(positions) #(1, T, E)
-    while loss > 0.0001:
+    while loss > 0.01:
         x = pos_emb
         x = model.mem(x)
         loss = F.mse_loss(x, lm_emb)
@@ -195,61 +191,69 @@ def run(
     with torch.inference_mode():
         x = pos_emb
         x = model.mem(x)
-        mem_logits = model.out_emb(x)
+        mem_logits = model.cur_emb(x)
         mem_tokens = mem_logits.argmax(dim=-1)
         print(tokenizer.decode(mem_tokens.squeeze(0)))
 
     print('='*10)
 
+    #autoregressive inference loop
+    inp_tok = prompt
     for _ in range(10):
 
-        positions = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
-        print(positions)
-        pos_emb = model.encode(positions) #(1, T, E)
+        pos_cur = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
+        pos_nxt = torch.arange(beg_pos, end_pos+1, device=data.device).view(1, -1)
+        print("pos_cur:", pos_cur)
+        print("pos_nxt:", pos_nxt)
 
-        x = pos_emb
-        x = model.mem(x)
+        cur_logits, nxt_logits = model(pos_cur)
 
-        mem_logits = model.out_emb(x.clone().detach())
-        mem_tokens = mem_logits.argmax(dim=-1)
-        print(tokenizer.decode(mem_tokens.squeeze(0))) #DEBUG
+        cur_tokens = cur_logits.argmax(dim=-1)
+        print("cur_tokens:", tokenizer.decode(cur_tokens[:,-20:].squeeze(0)))
 
-        x = model.lm(x)
-        x = model.norm(x)
-        lm_logits = model.out_emb(x)
-        lm_tokens = lm_logits.argmax(dim=-1)
-        print(tokenizer.decode(lm_tokens.squeeze(0))) #DEBUG
+        nxt_tokens = nxt_logits.argmax(dim=-1)
+        print("nxt_tokens:", tokenizer.decode(nxt_tokens[:,-20:].squeeze(0)))
 
-        pred_token = lm_tokens[:, -1:]
-        prompt = torch.cat([prompt, pred_token], dim=-1).detach()
-        print(tokenizer.decode(prompt.squeeze(0)))
+        nxt_token = nxt_tokens[:, -1:]
+        inp_tok = torch.cat([inp_tok, nxt_token], dim=-1).detach()
+        print("inp_tok:", tokenizer.decode(inp_tok[:,-20:].squeeze(0)))
+
+        end_pos += 1
 
         print('~~~')
 
         # Train memory to fit the updated prompt; recompute graph each iteration
-        lm_emb = model.inp_emb(prompt).clone().detach()
         loss = float('inf')
-        end_pos += 1
-        positions = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
-        print(positions)
-        pos_emb = model.encode(positions) #(1, T, E)
-        while loss > 0.0001:
+        while loss > 0.01:
 
-            x = pos_emb
-            x = model.mem(x)
-            loss = F.mse_loss(x, lm_emb)
+            cur_logits, nxt_logits = model(pos_nxt)
+
+            cur_loss = F.cross_entropy(
+                    cur_logits.view(-1, cur_logits.size(-1)),
+                    inp_tok.reshape(-1),
+            )
+            #remove last postion for nxt_logits
+            nxt_logits_stub = nxt_logits[:, :-1, :]
+            prompt_stub = inp_tok[:, 1:]
+            nxt_loss = F.cross_entropy(
+                nxt_logits_stub.view(-1, nxt_logits_stub.size(-1)),
+                prompt_stub.reshape(-1),
+            )
+            loss = cur_loss + nxt_loss * 0.5
             loss.backward()
-            nn.utils.clip_grad_norm_(mem_params, 1.0)
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            lm_opt.step()
+            lm_opt.zero_grad(set_to_none=True)
             mem_opt.step()
             mem_opt.zero_grad(set_to_none=True)
-            print(f"loss: {loss.item():.4f}", end="\n")
+            print(f"cur_loss: {cur_loss.item():.4f}, nxt_loss: {nxt_loss.item():.4f}", end="\n")
 
         with torch.inference_mode():
-            x = pos_emb
-            x = model.mem(x)
-            mem_logits = model.out_emb(x)
-            mem_tokens = mem_logits.argmax(dim=-1)
-            print(tokenizer.decode(mem_tokens.squeeze(0)))
+            cur_logits, nxt_logits = model(pos_nxt)
+            cur_tokens = cur_logits.argmax(dim=-1)
+            print(tokenizer.decode(cur_tokens[:,-20:].squeeze(0)))
+            nxt_tokens = nxt_logits.argmax(dim=-1)
+            print(tokenizer.decode(nxt_tokens[:,-20:].squeeze(0)))
 
         print('-'*10)
 
@@ -258,7 +262,7 @@ def run(
 # --- CLI ---
 if __name__ == "__main__":
 
-    root_dir = Path(__file__).parent
+    root_dir = Path(__file__).parent.parent
     data_dir = root_dir.parent.parent / "data"
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_dir", default=data_dir / "simple_stories")

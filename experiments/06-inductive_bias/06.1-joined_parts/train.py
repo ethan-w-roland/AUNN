@@ -258,7 +258,7 @@ def run(
 # --- CLI ---
 if __name__ == "__main__":
 
-    root_dir = Path(__file__).parent
+    root_dir = Path(__file__).parent.parent
     data_dir = root_dir.parent.parent / "data"
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_dir", default=data_dir / "simple_stories")

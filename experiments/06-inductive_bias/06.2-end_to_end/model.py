@@ -81,9 +81,10 @@ class AUNN(nn.Module):
         self.mem = nn.Sequential(*(MixerBlock(config) for _ in range(config.n_layer)))
         self.lm = nn.Sequential(*(MixerBlock(config) for _ in range(config.n_layer)))
         self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim)
-        self.out_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
+        self.cur_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
+        self.nxt_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
         self.norm = nn.RMSNorm(config.embed_dim)
-        self.inp_emb.weight = self.out_emb.weight #tie input and output embeds
+        self.inp_emb.weight = self.cur_emb.weight #tie inp and cur embeds
 
         self.apply(self._init_weights)
 
@@ -145,6 +146,8 @@ class AUNN(nn.Module):
 
         #get logits output
         x = self.norm(x)
-        logits = self.out_emb(x) #(B, T-1, E) -> (B, T-1, V)
+        
+        cur_logits = self.cur_emb(x) #(B, T, E) -> (B, T, V)
+        nxt_logits = self.nxt_emb(x) #(B, T, E) -> (B, T, V)
             
-        return logits
+        return cur_logits, nxt_logits
