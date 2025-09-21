@@ -55,16 +55,15 @@ def run(
 
     # --- Optimizers ---
 
-    lm_params = list(model.lm.get_params(embeds=True))
+    lm_params = []
+    for param_type in ["lm","norm","out_emb","inp_emb"]:
+        lm_params.extend(list(getattr(model, param_type).parameters()))
     lm_opt = optim.AdamW(lm_params, lr=lr)
 
-    mem_params = list(model.mem.get_params(embeds=True))
+    mem_params = list(model.mem.parameters())
     mem_opt = optim.AdamW(mem_params, lr=lr*2)
 
-    proj_params = list(model.proj.parameters())
-    proj_opt = optim.AdamW(proj_params, lr=lr)
-
-    # --- (0) Resume from checkpoint if requested ---
+    # --- Resume from checkpoint if requested ---
     checkpoint_dir = root_dir / "checkpoints"
     checkpoint_dir.mkdir(exist_ok=True)
     if resume:
@@ -83,8 +82,6 @@ def run(
                     mem_opt.load_state_dict(state["mem_opt_state_dict"]) 
                 if "lm_opt_state_dict" in state:
                     lm_opt.load_state_dict(state["lm_opt_state_dict"]) 
-                if "proj_opt_state_dict" in state:
-                    proj_opt.load_state_dict(state["proj_opt_state_dict"]) 
                 print("Resume flag set: skipping steps (1)-(3).")
             else:
                 print(f"No checkpoints found in {checkpoint_dir}; skipping steps (1)-(3) without loading.")
@@ -92,82 +89,6 @@ def run(
             print(f"Failed to load checkpoint: {e}; skipping steps (1)-(3).")
     
     if not resume:
-        # --- (1) Train Projector ---
-        # position -> past positions
-
-        print("Training Projector...")
-        pbar = tqdm(range(num_batches), ncols=150)
-        max_pos = num_batches * block_size * batch_size
-        for _ in pbar:
-
-            #randomly sample ints between 0 and max_pos
-            positions = torch.randint(block_size, max_pos, (batch_size, 1)).to(device) #(B,1)
-
-            #targets is size (B,T) where targets(b,n) is equal to the value of positions(b,1) and targets(b,n-i) is equal to positions(b,1) - i for i in range(T)
-            offsets = torch.arange(-(block_size - 1), 1, device=device).view(1, block_size)  # (1, T)
-            targets = positions + offsets  # (B, T)
-
-            positions = model.encode(positions) #(B, 1, E)
-            targets = model.encode(targets) #(B, T, E)
-            
-            pred = model.proj.forward(positions) #(B, T, E)
-            loss = F.mse_loss(pred, targets)
-
-            # Calculate average cosine similarity between pred and targets
-            # pred: (B, T, E), targets: (B, T, E)
-            pred_flat = pred.reshape(-1, pred.size(-1))
-            targets_flat = targets.reshape(-1, targets.size(-1))
-            cos_sim = F.cosine_similarity(pred_flat, targets_flat, dim=-1)
-            avg_cos_sim = cos_sim.mean().item()
-
-            loss.backward()
-            nn.utils.clip_grad_norm_(proj_params, 1.0)
-            proj_opt.step()
-            proj_opt.zero_grad(set_to_none=True)
-
-            pbar.set_description(f"loss={loss.item():.4f}, cos={avg_cos_sim:.4f}")
-
-        # --- (2) Train Memory ---
-        # position -> token values
-
-        print("Training Memory...")
-        for _ in range(epochs):
-
-            loader.reset(0)
-            pbar = tqdm(range(num_batches-10, num_batches), ncols=150)
-
-            for batch_num in pbar:
-
-                data = loader.next_batch()
-                # Compute the starting position for this batch
-                start_pos = batch_num * block_size
-                # Create a (B, T) tensor where each row is a sequence of positions
-                B, T = data.shape
-                positions = (
-                    torch.arange(start_pos, start_pos + B * T, device=data.device)
-                    .view(B, T)
-                )
-                positions = model.encode(positions) #(B, T, E)
-
-                N = 0
-                while True:
-                    N += 1
-
-                    loss = model.mem.forward(embeds=positions, targets=data)[1]
-
-                    loss.backward()
-                    nn.utils.clip_grad_norm_(mem_params, 1.0)
-                    mem_opt.step()
-                    mem_opt.zero_grad(set_to_none=True)
-
-                    pbar.set_description(f"loss={loss.item():.3f}")
-
-                    if loss.item() < 0.2:
-                        print(f"\nN={N}")
-                        break
-
-
-        # --- (3) Train LM ---
 
         print("Training LM...")
         for _ in range(epochs):
@@ -179,16 +100,23 @@ def run(
 
                 data = loader.next_batch()
                 x, y = data[:, :-1], data[:, 1:]
-                x = model.lm.inp_emb(x)
 
-                loss = model.lm.forward(embeds=x, targets=y)[1]
+                x = model.inp_emb(x)
+                x = model.lm(x)
+                x = model.norm(x)
+                x = model.out_emb(x)
+
+                loss = F.cross_entropy(
+                    x.view(-1, x.size(-1)),
+                    y.reshape(-1),
+                )
 
                 loss.backward()
                 nn.utils.clip_grad_norm_(lm_params, 1.0)
                 lm_opt.step()
                 lm_opt.zero_grad(set_to_none=True)
 
-                pbar.set_description(f"loss={loss.item():.3f}")       
+                pbar.set_description(f"loss={loss.item():.3f}")
 
 
         # --- Checkpoint Model ---
@@ -200,13 +128,12 @@ def run(
             "model_state_dict": model.state_dict(),
             "mem_opt_state_dict": mem_opt.state_dict(),
             "lm_opt_state_dict": lm_opt.state_dict(),
-            "proj_opt_state_dict": proj_opt.state_dict(),
         }
         torch.save(checkpoint, checkpoint_path)
         print(f"Model checkpoint saved to {checkpoint_path}")
 
 
-    #--- (5) Inference AUNN ---
+    #--- (3) Inference AUNN ---
     # a. Given a token prompt, condition memory module on the prompt (10-100ish steps)
     # b. input positions of token prompt to aunn.forward(), position -> embeds -> logits
     # c. get logits for next token
@@ -220,6 +147,113 @@ def run(
     # the hope is to solve long context coherence by treating LLM weights as a kind of additional hidden state
 
     print("Starting experimental phase...")
+    loader.reset(0)
+
+    #autoregressively inference just the LM
+    data = loader.next_batch()
+    data = data[0,:20] #first batch, first 20 tokens
+    print(tokenizer.decode(data))
+    prompt = data[:10] #first 10 tokens
+    prompt = prompt.unsqueeze(0) #(1, T)
+    with torch.inference_mode():
+        for i in range(10):
+            #get prediction
+            x = model.inp_emb(prompt)
+            x = model.lm(x)
+            x = model.norm(x)
+            x = model.out_emb(x)
+            next_logit = x[:, -1, :]
+            next_token = next_logit.argmax(dim=-1).unsqueeze(0)
+            prompt = torch.cat([prompt, next_token], dim=-1)
+            print(tokenizer.decode(prompt.squeeze(0)))
+
+    print('-'*30)
+
+    #autoregressive inference via memory training
+
+    #(a) train first 10 tokens into memory
+    prompt = data[:10] #first 10 tokens
+    prompt = prompt.unsqueeze(0) #(1, T)
+    lm_emb = model.inp_emb(prompt).clone().detach()
+    loss = float('inf')
+    beg_pos = 0
+    end_pos = 10
+    positions = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
+    print(positions)
+    pos_emb = model.encode(positions) #(1, T, E)
+    while loss > 0.0001:
+        x = pos_emb
+        x = model.mem(x)
+        loss = F.mse_loss(x, lm_emb)
+        loss.backward()
+        nn.utils.clip_grad_norm_(mem_params, 1.0)
+        mem_opt.step()
+        mem_opt.zero_grad(set_to_none=True)
+        print(f"loss: {loss.item():.4f}", end="\n")
+
+    #check that initial (a) training worked
+    with torch.inference_mode():
+        x = pos_emb
+        x = model.mem(x)
+        mem_logits = model.out_emb(x)
+        mem_tokens = mem_logits.argmax(dim=-1)
+        print(tokenizer.decode(mem_tokens.squeeze(0)))
+
+    print('='*10)
+
+    for _ in range(10):
+
+        positions = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
+        print(positions)
+        pos_emb = model.encode(positions) #(1, T, E)
+
+        x = pos_emb
+        x = model.mem(x)
+
+        mem_logits = model.out_emb(x.clone().detach())
+        mem_tokens = mem_logits.argmax(dim=-1)
+        print(tokenizer.decode(mem_tokens.squeeze(0))) #DEBUG
+
+        x = model.lm(x)
+        x = model.norm(x)
+        lm_logits = model.out_emb(x)
+        lm_tokens = lm_logits.argmax(dim=-1)
+        print(tokenizer.decode(lm_tokens.squeeze(0))) #DEBUG
+
+        pred_token = lm_tokens[:, -1:]
+        prompt = torch.cat([prompt, pred_token], dim=-1).detach()
+        print(tokenizer.decode(prompt.squeeze(0)))
+
+        print('~~~')
+
+        # Train memory to fit the updated prompt; recompute graph each iteration
+        lm_emb = model.inp_emb(prompt).clone().detach()
+        loss = float('inf')
+        end_pos += 1
+        positions = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
+        print(positions)
+        pos_emb = model.encode(positions) #(1, T, E)
+        while loss > 0.0001:
+
+            x = pos_emb
+            x = model.mem(x)
+            loss = F.mse_loss(x, lm_emb)
+            loss.backward()
+            nn.utils.clip_grad_norm_(mem_params, 1.0)
+            mem_opt.step()
+            mem_opt.zero_grad(set_to_none=True)
+            print(f"loss: {loss.item():.4f}", end="\n")
+
+        with torch.inference_mode():
+            x = pos_emb
+            x = model.mem(x)
+            mem_logits = model.out_emb(x)
+            mem_tokens = mem_logits.argmax(dim=-1)
+            print(tokenizer.decode(mem_tokens.squeeze(0)))
+
+        print('-'*10)
+
+    exit()
 
 # --- CLI ---
 if __name__ == "__main__":
