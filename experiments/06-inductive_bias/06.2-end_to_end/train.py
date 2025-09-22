@@ -198,7 +198,7 @@ def run(
     print('='*10)
 
     #autoregressive inference loop
-    inp_tok = prompt
+    tokens = prompt
     for _ in range(10):
 
         pos_cur = torch.arange(beg_pos, end_pos, device=data.device).view(1, -1)
@@ -214,38 +214,48 @@ def run(
         nxt_tokens = nxt_logits.argmax(dim=-1)
         print("nxt_tokens:", tokenizer.decode(nxt_tokens[:,-20:].squeeze(0)))
 
-        nxt_token = nxt_tokens[:, -1:]
-        inp_tok = torch.cat([inp_tok, nxt_token], dim=-1).detach()
-        print("inp_tok:", tokenizer.decode(inp_tok[:,-20:].squeeze(0)))
+        nxt_logit = nxt_logits[:, -1, :]
+        nxt_token = nxt_logit.argmax(dim=-1).unsqueeze(0)
+        tokens = torch.cat([tokens, nxt_token], dim=-1).detach()
+        print("tokens:", tokenizer.decode(tokens[:,-20:].squeeze(0)))
 
         end_pos += 1
 
         print('~~~')
 
         # Train memory to fit the updated prompt; recompute graph each iteration
-        loss = float('inf')
-        while loss > 0.01:
+        cur_loss = float('inf')
+        nxt_loss = float('inf')
+        cur_target = torch.cat([cur_logits, nxt_logit.unsqueeze(1)], dim=1).detach()
+        nxt_target = nxt_logits.detach()
+        while cur_loss > 1 or nxt_loss > 1:
 
-            cur_logits, nxt_logits = model(pos_nxt)
-
-            cur_loss = F.cross_entropy(
-                    cur_logits.view(-1, cur_logits.size(-1)),
-                    inp_tok.reshape(-1),
-            )
-            #remove last postion for nxt_logits
-            nxt_logits_stub = nxt_logits[:, :-1, :]
-            prompt_stub = inp_tok[:, 1:]
-            nxt_loss = F.cross_entropy(
-                nxt_logits_stub.view(-1, nxt_logits_stub.size(-1)),
-                prompt_stub.reshape(-1),
-            )
-            loss = cur_loss + nxt_loss * 0.5
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            lm_opt.step()
-            lm_opt.zero_grad(set_to_none=True)
-            mem_opt.step()
+            # Single forward pass
             mem_opt.zero_grad(set_to_none=True)
+            c, _ = model(pos_nxt)
+            cur_loss = F.kl_div(
+                F.log_softmax(c, dim=-1),
+                F.log_softmax(cur_target, dim=-1),
+                reduction='batchmean',
+                log_target=True,
+            )
+            cur_loss.backward()
+            nn.utils.clip_grad_norm_(mem_params, 1.0)
+            mem_opt.step()
+
+            lm_opt.zero_grad(set_to_none=True)
+            _, n = model(pos_nxt)
+            n_stub = n[:, :-1, :]
+            nxt_loss = F.kl_div(
+                F.log_softmax(n_stub, dim=-1),
+                F.log_softmax(nxt_target, dim=-1),
+                reduction='batchmean',
+                log_target=True,
+            )
+            nxt_loss.backward()
+            nn.utils.clip_grad_norm_(lm_params, 1.0)
+            lm_opt.step()
+
             print(f"cur_loss: {cur_loss.item():.4f}, nxt_loss: {nxt_loss.item():.4f}", end="\n")
 
         with torch.inference_mode():
