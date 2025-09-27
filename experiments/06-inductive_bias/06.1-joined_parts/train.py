@@ -56,7 +56,7 @@ def run(
     # --- Optimizers ---
 
     lm_params = []
-    for param_type in ["lm","norm","out_emb","inp_emb"]:
+    for param_type in ["lm","norm","out_emb"]:
         lm_params.extend(list(getattr(model, param_type).parameters()))
     lm_opt = optim.AdamW(lm_params, lr=lr)
 

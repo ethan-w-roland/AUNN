@@ -7,7 +7,6 @@
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
-from typing import Tuple
 import torch.nn.functional as F
 
 torch.set_float32_matmul_precision("medium")
