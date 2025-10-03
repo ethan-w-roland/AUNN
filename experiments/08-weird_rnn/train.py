@@ -160,7 +160,7 @@ def run(
         loss = float('inf')
         while loss > 0.001:
 
-            logits, x1, x2 = aunn(position)
+            logits, x1, x2 = aunn(position) #NOTE see here how the input is only ever position!
             loss = F.mse_loss(x1, x)
             loss.backward()
             nn.utils.clip_grad_norm_(mem_params, 1.0)
@@ -168,14 +168,16 @@ def run(
             mem_opt.zero_grad(set_to_none=True)
             print(f"@{i} loss: {loss.item():.4f}", end="\r")
 
-        if i < len(prompt) - 1:
+        if i < len(prompt) - 1: 
+            #training prompt into the model
             next_token = prompt[i+1].ravel()
             print('[prompt] next_token:', tokenizer.decode(next_token))
             preds.append(next_token)
             next_emb = aunn.wRNN.inp_emb(next_token)
             x = x2 + next_emb
             x = x.clone().detach()
-        else:
+        else: 
+            #autogressively generating from the model
             next_token = logits.argmax(dim=-1).ravel()
             print('[gen] next_token:', tokenizer.decode(next_token))
             preds.append(next_token)

@@ -53,7 +53,7 @@ class wRNN(nn.Module): #weird RNN
         self.config = config
         self.blocks = nn.Sequential(*(Block(config) for _ in range(config.n_layer)))
         self.norm = nn.RMSNorm(config.embed_dim)
-        self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim) #used adhoc, not in forward
+        self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim)
         self.out_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
         self.inp_emb.weight = self.out_emb.weight #tie input and output embeds
 
@@ -108,10 +108,10 @@ class AUNN(nn.Module):
         self.out_nxt_proj = nn.Linear(config.embed_dim, config.embed_dim)
         self.out_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
 
-        #RFF stuff
+        #Random Fourier Features
         self.encode_dim = config.encode_dim
         self.block_size = config.block_size
-        self.alpha = -np.log(0.1) / (self.block_size ** 2) #gaussian kernel decay        
+        self.alpha = -np.log(0.1) / (self.block_size ** 2) #gaussian kernel decay factor      
         M = config.encode_dim // 2
         rff_w = torch.randn(M) * (2.0 * self.alpha) ** 0.5
         rff_b = torch.rand(M) * (2.0 * torch.pi)
@@ -135,23 +135,22 @@ class AUNN(nn.Module):
         Parameters:
             positions (torch.Tensor): integer tensor of shape (...), e.g., (B, T)
         Returns:
-            torch.Tensor: embeddings of shape (..., K) where K == embed_dim
+            torch.Tensor: embeddings of shape (..., E) where E == embed_dim
         """
-        K = self.encode_dim
+
+        E = self.encode_dim
         device = positions.device
         dtype = self.proj.weight.dtype
-
-        # Use fixed RFF params registered as buffers for deterministic encoding
         w = self.rff_w.to(device=device, dtype=dtype)
         b = self.rff_b.to(device=device, dtype=dtype)
 
         # Compute embedding using cos(w * n + b) and sin(w * n + b)
         pos = positions.to(dtype)
-        z = pos[..., None] * w + b  # (..., M)
+        z = pos[..., None] * w + b  # (..., E)
         cos_z = torch.cos(z)
         sin_z = torch.sin(z)
-        embedding = torch.cat([cos_z, sin_z], dim=-1)  # (..., K)
-        embedding = embedding * (2.0 / float(K)) ** 0.5
+        embedding = torch.cat([cos_z, sin_z], dim=-1)  # (..., E)
+        embedding = embedding * (2.0 / float(E)) ** 0.5
         return embedding
     
     def forward(

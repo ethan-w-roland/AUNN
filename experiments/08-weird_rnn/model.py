@@ -55,7 +55,7 @@ class wRNN(nn.Module): #weird RNN
         self.config = config
         self.blocks = nn.Sequential(*(Block(config) for _ in range(config.n_layer)))
         self.norm = nn.RMSNorm(config.embed_dim)
-        self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim) #used adhoc, not in forward
+        self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim)
         self.out_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
         self.inp_emb.weight = self.out_emb.weight #tie input and output embeds
 

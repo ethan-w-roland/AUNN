@@ -1,0 +1,13 @@
+(aunn) root@1748d37fe79e:/workspace/AUNN/experiments/09-mem_embeds# python test.py
+data[-10:] tensor([ 7,  8,  9, 10, 11, 12, 13, 14, 15, 16], device='cuda:0')
+Number of parameters: 3165696
+loss_a=2.2228 loss_b=3.1055 loss_kl=0.0481: 100%|██████████| 100000/100000 [07:07<00:00, 234.12it/s]
+tensor([[12278, 12279, 12280, 12281, 12282, 12283, 12284, 12285, 12286, 12287]],
+       device='cuda:0')
+tensor([[ 7,  7,  8,  9, 10, 11, 12, 13, 14, 15]], device='cuda:0')
+tensor([[ 7,  8,  9, 10, 11, 12, 13, 14, 15, 16]], device='cuda:0')
+---
+tensor([[12288, 12289, 12290, 12291, 12292, 12293, 12294, 12295, 12296, 12297]],
+       device='cuda:0')
+tensor([[16, 17, 18, 19, 19, 17, 12, 12, 12, 13]], device='cuda:0')
+tensor([[17, 18, 19, 20, 20, 17, 13, 13, 13, 14]], device='cuda:0')
