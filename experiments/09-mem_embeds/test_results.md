@@ -1,3 +1,4 @@
+```python
 (aunn) root@1748d37fe79e:/workspace/AUNN/experiments/09-mem_embeds# python test.py
 data[-10:] tensor([ 7,  8,  9, 10, 11, 12, 13, 14, 15, 16], device='cuda:0')
 Number of parameters: 3165696
@@ -11,3 +12,6 @@ tensor([[12288, 12289, 12290, 12291, 12292, 12293, 12294, 12295, 12296, 12297]],
        device='cuda:0')
 tensor([[16, 17, 18, 19, 19, 17, 12, 12, 12, 13]], device='cuda:0')
 tensor([[17, 18, 19, 20, 20, 17, 13, 13, 13, 14]], device='cuda:0')
+```
+
+Really interesting results above! Generally good evidence for understanding progression both "within position" and "between position". Especially striking that we get perfect generalization for 4 positions past the end of the original dataset. Enough evidence here to progress to the realistic setting. Plan for that won't be to train from scratch (which I suspect would require many tricks) but to distill the wRNN into an AUNN architecture.
