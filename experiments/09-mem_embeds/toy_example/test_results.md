@@ -14,4 +14,6 @@ tensor([[16, 17, 18, 19, 19, 17, 12, 12, 12, 13]], device='cuda:0')
 tensor([[17, 18, 19, 20, 20, 17, 13, 13, 13, 14]], device='cuda:0')
 ```
 
-Really interesting results above! Generally good evidence for understanding progression both "within position" and "between position". Especially striking that we get perfect generalization for 4 positions past the end of the original dataset. Enough evidence here to progress to the realistic setting. Plan for that won't be to train from scratch (which I suspect would require many tricks) but to distill the wRNN into an AUNN architecture.
+Really interesting results above! Generally good evidence for understanding progression both "within position" and "between position". Especially striking that we get perfect generalization for 4 positions past the end of the original dataset. Enough evidence here to progress to the realistic setting. Plan for that won't be to train from scratch (which I suspect would require many tricks) but to distill the wRNN hidden states into an AUNN architecture.
+
+I especially think the training dynamics associated with adding the causal loss are really interesting, it would be very unique to demonstrate language modeling purely via the type of relationships we see the model understanding above (i.e. projecting forward dataset level relations rather than pure input-output mapping based learning)

@@ -53,6 +53,8 @@ class wRNN(nn.Module): #weird RNN
         self.config = config
         self.blocks = nn.Sequential(*(Block(config) for _ in range(config.n_layer)))
         self.norm = nn.RMSNorm(config.embed_dim)
+        self.cur_proj = nn.Linear(config.embed_dim, config.embed_dim)
+        self.nxt_proj = nn.Linear(config.embed_dim, config.embed_dim)
         self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim)
         self.out_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
         self.inp_emb.weight = self.out_emb.weight #tie input and output embeds
@@ -78,35 +80,53 @@ class wRNN(nn.Module): #weird RNN
         B, T, E = embeds.shape
 
         dtype = embeds.dtype
-        x = torch.zeros(B, E, device=tokens.device, dtype=dtype)
+        inp_emb = torch.zeros(B, E, device=tokens.device, dtype=dtype)
         logits = []
-        loss = 0.0
+        ce_loss = 0.0
+        aux_loss = 0.0
 
         for idx in range(T):
-            cur_emb = embeds[:, idx, :] #(B, E)
-            x = cur_emb + x #(B, E)
-            x = x + self.blocks(x) #(B, E)
-            x = self.norm(x) #(B, E)
-            logit = self.out_emb(x) #(B, V)
-            logits.append(logit)
-            loss += F.cross_entropy(logit, targets[:, idx])
 
-        loss = loss / T
+            tok_emb = embeds[:, idx, :] #(B, E)
+            inp_emb = tok_emb + inp_emb #(B, E)
+
+            x = inp_emb + self.blocks(inp_emb) #(B, E)
+            x = self.norm(x) #(B, E)
+
+            cur_emb = self.cur_proj(x) #(B, E)
+            cur_logit = self.out_emb(cur_emb) #(B, V)
+
+            nxt_emb = self.nxt_proj(x) #(B, E)
+            nxt_logit = self.out_emb(nxt_emb) #(B, V)
+
+            ce_loss_cur = F.cross_entropy(cur_logit, tokens[:, idx])
+            ce_loss_nxt = F.cross_entropy(nxt_logit, targets[:, idx])
+            ce_loss += (ce_loss_cur + ce_loss_nxt) / 2
+            aux_loss += F.mse_loss(cur_emb, inp_emb)
+
+            inp_emb = nxt_emb
+            logits.append(nxt_logit)
+
+        ce_loss = ce_loss / T
+        aux_loss = aux_loss / T
 
         logits = torch.stack(logits, dim=1) #(B, T, V)
-        return logits, loss
+        return logits, ce_loss, aux_loss
 
 class AUNN(nn.Module):
     def __init__(self, config: Config):
         super().__init__()
         
         self.config = config
+        self.inp_emb = nn.Embedding(config.vocab_size, config.embed_dim)
         self.in_proj = nn.Linear(config.encode_dim, config.embed_dim)
-        self.blocks = nn.Sequential(*(Block(config) for _ in range(config.n_layer)))
+        self.blocks_a = nn.Sequential(*(Block(config) for _ in range(config.n_layer)))
+        self.blocks_b = nn.Sequential(*(Block(config) for _ in range(config.n_layer)))
         self.norm = nn.RMSNorm(config.embed_dim)
-        self.out_cur_proj = nn.Linear(config.embed_dim, config.embed_dim)
-        self.out_nxt_proj = nn.Linear(config.embed_dim, config.embed_dim)
+        self.cur_proj = nn.Linear(config.embed_dim, config.embed_dim)
+        self.nxt_proj = nn.Linear(config.embed_dim, config.embed_dim)
         self.out_emb = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
+        self.inp_emb.weight = self.out_emb.weight #tie input and output embeds
 
         #Random Fourier Features
         self.encode_dim = config.encode_dim
@@ -129,6 +149,17 @@ class AUNN(nn.Module):
         if hasattr(module, "bias") and module.bias is not None:
             nn.init.zeros_(module.bias)
 
+    def get_fast_weights(self):
+        yield from self.in_proj.parameters()
+        yield from self.blocks_a.parameters()
+
+    def get_slow_weights(self):
+        yield from self.blocks_b.parameters()
+        yield from self.norm.parameters()
+        yield from self.cur_proj.parameters()
+        yield from self.nxt_proj.parameters()
+        yield from self.out_emb.parameters()
+
     def encode(self, positions: torch.Tensor) -> torch.Tensor:
         """
         Generate RFF-based embeddings for integer positions.
@@ -140,7 +171,7 @@ class AUNN(nn.Module):
 
         E = self.encode_dim
         device = positions.device
-        dtype = self.proj.weight.dtype
+        dtype = self.in_proj.weight.dtype
         w = self.rff_w.to(device=device, dtype=dtype)
         b = self.rff_b.to(device=device, dtype=dtype)
 
@@ -159,10 +190,14 @@ class AUNN(nn.Module):
     ) -> torch.Tensor:
 
         x = self.encode(positions) #(B, T) -> (B, T, E)
-        x = self.proj(x)
-        x = self.blocks(x)
+        x = self.in_proj(x)
+        h = self.blocks_a(x)
+        x = h + self.blocks_b(h)
         x = self.norm(x)
-        a = self.out_cur_proj(x)
-        b = self.out_nxt_proj(x)
 
-        return a, b
+        cur = self.cur_proj(x)
+        nxt = self.nxt_proj(x)
+
+        aux_loss = F.mse_loss(cur, h)
+
+        return cur, nxt, aux_loss
